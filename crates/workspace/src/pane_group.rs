@@ -122,7 +122,6 @@ impl PaneGroup {
         };
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         project: &Entity<Project>,
@@ -214,13 +213,6 @@ impl Member {
         Member::Axis(PaneAxis::new(axis, members))
     }
 
-    fn contains(&self, needle: &Entity<Pane>) -> bool {
-        match self {
-            Member::Axis(axis) => axis.members.iter().any(|member| member.contains(needle)),
-            Member::Pane(pane) => pane == needle,
-        }
-    }
-
     fn first_pane(&self) -> Entity<Pane> {
         match self {
             Member::Axis(axis) => axis.members[0].first_pane(),
@@ -228,7 +220,6 @@ impl Member {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &self,
         project: &Entity<Project>,
@@ -678,7 +669,6 @@ impl PaneAxis {
         None
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn render(
         &self,
         project: &Entity<Project>,
@@ -702,7 +692,7 @@ impl PaneAxis {
             cx.entity().downgrade(),
         )
         .children(self.members.iter().enumerate().map(|(ix, member)| {
-            if member.contains(active_pane) {
+            if matches!(member, Member::Pane(pane) if pane == active_pane) {
                 active_pane_ix = Some(ix);
             }
             member
@@ -725,6 +715,7 @@ impl PaneAxis {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum SplitDirection {
     Up,
     Down,
@@ -807,14 +798,6 @@ impl SplitDirection {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq)]
-pub enum ResizeIntent {
-    Lengthen,
-    Shorten,
-    Widen,
-    Narrow,
-}
-
 mod element {
     use std::mem;
     use std::{cell::RefCell, iter, rc::Rc, sync::Arc};
@@ -889,7 +872,6 @@ mod element {
             self
         }
 
-        #[allow(clippy::too_many_arguments)]
         fn compute_resize(
             flexes: &Arc<Mutex<Vec<f32>>>,
             e: &MouseMoveEvent,
@@ -979,7 +961,6 @@ mod element {
             window.refresh();
         }
 
-        #[allow(clippy::too_many_arguments)]
         fn layout_handle(
             axis: Axis,
             pane_bounds: Bounds<Pixels>,

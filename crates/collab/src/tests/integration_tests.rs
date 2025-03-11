@@ -8,12 +8,13 @@ use crate::{
 use anyhow::{anyhow, Result};
 use assistant_context_editor::ContextStore;
 use assistant_slash_command::SlashCommandWorkingSet;
+use buffer_diff::{assert_hunks, DiffHunkSecondaryStatus, DiffHunkStatus};
 use call::{room, ActiveCall, ParticipantLocation, Room};
 use client::{User, RECEIVE_TIMEOUT};
 use collections::{HashMap, HashSet};
 use fs::{FakeFs, Fs as _, RemoveOptions};
 use futures::{channel::mpsc, StreamExt as _};
-use prompt_library::PromptBuilder;
+use prompt_store::PromptBuilder;
 
 use git::status::{FileStatus, StatusCode, TrackedStatus, UnmergedStatus, UnmergedStatusCode};
 use gpui::{
@@ -2613,11 +2614,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(1..2, "", "two\n")],
+            &[(1..2, "", "two\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2641,11 +2642,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(1..2, "", "two\n")],
+            &[(1..2, "", "two\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2663,11 +2664,16 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(committed_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(1..2, "TWO\n", "two\n")],
+            &[(
+                1..2,
+                "TWO\n",
+                "two\n",
+                DiffHunkStatus::modified(DiffHunkSecondaryStatus::HasSecondaryHunk),
+            )],
         );
     });
 
@@ -2689,11 +2695,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(new_staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(2..3, "", "three\n")],
+            &[(2..3, "", "three\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2703,11 +2709,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(new_staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(2..3, "", "three\n")],
+            &[(2..3, "", "three\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2717,11 +2723,16 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(new_committed_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(1..2, "TWO_HUNDRED\n", "two\n")],
+            &[(
+                1..2,
+                "TWO_HUNDRED\n",
+                "two\n",
+                DiffHunkStatus::modified(DiffHunkSecondaryStatus::OverlapsWithSecondaryHunk),
+            )],
         );
     });
 
@@ -2763,11 +2774,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &diff.base_text_string().unwrap(),
-            &[(1..2, "", "two\n")],
+            &[(1..2, "", "two\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2790,11 +2801,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &staged_text,
-            &[(1..2, "", "two\n")],
+            &[(1..2, "", "two\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2812,11 +2823,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(new_staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &new_staged_text,
-            &[(2..3, "", "three\n")],
+            &[(2..3, "", "three\n", DiffHunkStatus::added_none())],
         );
     });
 
@@ -2826,11 +2837,11 @@ async fn test_git_diff_base_change(
             diff.base_text_string().as_deref(),
             Some(new_staged_text.as_str())
         );
-        diff::assert_hunks(
-            diff.snapshot.hunks_in_row_range(0..4, buffer),
+        assert_hunks(
+            diff.hunks_in_row_range(0..4, buffer, cx),
             buffer,
             &new_staged_text,
-            &[(2..3, "", "three\n")],
+            &[(2..3, "", "three\n", DiffHunkStatus::added_none())],
         );
     });
 }
@@ -2884,7 +2895,10 @@ async fn test_git_branch_name(
         assert_eq!(worktrees.len(), 1);
         let worktree = worktrees[0].clone();
         let root_entry = worktree.read(cx).snapshot().root_git_entry().unwrap();
-        assert_eq!(root_entry.branch(), branch_name.map(Into::into));
+        assert_eq!(
+            root_entry.branch().map(|branch| branch.name.to_string()),
+            branch_name
+        );
     }
 
     // Smoke test branch reading
@@ -4424,15 +4438,14 @@ async fn test_formatting_buffer(
         .await
         .unwrap();
     let project_b = client_b.join_remote_project(project_id, cx_b).await;
-    let lsp_store_b = project_b.update(cx_b, |p, _| p.lsp_store());
 
     let buffer_b = project_b
         .update(cx_b, |p, cx| p.open_buffer((worktree_id, "a.rs"), cx))
         .await
         .unwrap();
 
-    let _handle = lsp_store_b.update(cx_b, |lsp_store, cx| {
-        lsp_store.register_buffer_with_language_servers(&buffer_b, cx)
+    let _handle = project_b.update(cx_b, |project, cx| {
+        project.register_buffer_with_language_servers(&buffer_b, cx)
     });
     let fake_language_server = fake_language_servers.next().await.unwrap();
     fake_language_server.handle_request::<lsp::request::Formatting, _, _>(|_, _| async move {
@@ -6341,7 +6354,7 @@ async fn test_preview_tabs(cx: &mut TestAppContext) {
     // Open item 1 as preview
     workspace
         .update_in(cx, |workspace, window, cx| {
-            workspace.open_path_preview(path_1.clone(), None, true, true, window, cx)
+            workspace.open_path_preview(path_1.clone(), None, true, true, true, window, cx)
         })
         .await
         .unwrap();
@@ -6362,7 +6375,7 @@ async fn test_preview_tabs(cx: &mut TestAppContext) {
     // Open item 2 as preview
     workspace
         .update_in(cx, |workspace, window, cx| {
-            workspace.open_path_preview(path_2.clone(), None, true, true, window, cx)
+            workspace.open_path_preview(path_2.clone(), None, true, true, true, window, cx)
         })
         .await
         .unwrap();
@@ -6494,7 +6507,7 @@ async fn test_preview_tabs(cx: &mut TestAppContext) {
     // Open item 2 as preview in right pane
     workspace
         .update_in(cx, |workspace, window, cx| {
-            workspace.open_path_preview(path_2.clone(), None, true, true, window, cx)
+            workspace.open_path_preview(path_2.clone(), None, true, true, true, window, cx)
         })
         .await
         .unwrap();
@@ -6532,7 +6545,7 @@ async fn test_preview_tabs(cx: &mut TestAppContext) {
     // Open item 2 as preview in left pane
     workspace
         .update_in(cx, |workspace, window, cx| {
-            workspace.open_path_preview(path_2.clone(), None, true, true, window, cx)
+            workspace.open_path_preview(path_2.clone(), None, true, true, true, window, cx)
         })
         .await
         .unwrap();
@@ -6728,19 +6741,24 @@ async fn test_remote_git_branches(
         .collect::<HashSet<_>>();
 
     let (project_a, worktree_id) = client_a.build_local_project("/project", cx_a).await;
+
     let project_id = active_call_a
         .update(cx_a, |call, cx| call.share_project(project_a.clone(), cx))
         .await
         .unwrap();
     let project_b = client_b.join_remote_project(project_id, cx_b).await;
 
-    let root_path = ProjectPath::root_path(worktree_id);
-    // Client A sees that a guest has joined.
+    // Client A sees that a guest has joined and the repo has been populated
     executor.run_until_parked();
 
+    let repo_b = cx_b.update(|cx| project_b.read(cx).active_repository(cx).unwrap());
+
+    let root_path = ProjectPath::root_path(worktree_id);
+
     let branches_b = cx_b
-        .update(|cx| project_b.update(cx, |project, cx| project.branches(root_path.clone(), cx)))
+        .update(|cx| repo_b.update(cx, |repository, _| repository.branches()))
         .await
+        .unwrap()
         .unwrap();
 
     let new_branch = branches[2];
@@ -6752,13 +6770,10 @@ async fn test_remote_git_branches(
 
     assert_eq!(branches_b, branches_set);
 
-    cx_b.update(|cx| {
-        project_b.update(cx, |project, cx| {
-            project.update_or_create_branch(root_path.clone(), new_branch.to_string(), cx)
-        })
-    })
-    .await
-    .unwrap();
+    cx_b.update(|cx| repo_b.read(cx).change_branch(new_branch))
+        .await
+        .unwrap()
+        .unwrap();
 
     executor.run_until_parked();
 
@@ -6772,16 +6787,18 @@ async fn test_remote_git_branches(
         })
     });
 
-    assert_eq!(host_branch.as_ref(), branches[2]);
+    assert_eq!(host_branch.name, branches[2]);
 
     // Also try creating a new branch
-    cx_b.update(|cx| {
-        project_b.update(cx, |project, cx| {
-            project.update_or_create_branch(root_path.clone(), "totally-new-branch".to_string(), cx)
-        })
-    })
-    .await
-    .unwrap();
+    cx_b.update(|cx| repo_b.read(cx).create_branch("totally-new-branch"))
+        .await
+        .unwrap()
+        .unwrap();
+
+    cx_b.update(|cx| repo_b.read(cx).change_branch("totally-new-branch"))
+        .await
+        .unwrap()
+        .unwrap();
 
     executor.run_until_parked();
 
@@ -6793,5 +6810,5 @@ async fn test_remote_git_branches(
         })
     });
 
-    assert_eq!(host_branch.as_ref(), "totally-new-branch");
+    assert_eq!(host_branch.name, "totally-new-branch");
 }

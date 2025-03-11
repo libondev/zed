@@ -1,17 +1,22 @@
 use std::sync::Arc;
 
 use assistant_slash_command::SlashCommandWorkingSet;
-use gpui::{AnyElement, DismissEvent, SharedString, Task, WeakEntity};
+use gpui::{AnyElement, AnyView, DismissEvent, SharedString, Task, WeakEntity};
 use picker::{Picker, PickerDelegate, PickerEditorPosition};
 use ui::{prelude::*, ListItem, ListItemSpacing, PopoverMenu, PopoverTrigger, Tooltip};
 
 use crate::context_editor::ContextEditor;
 
 #[derive(IntoElement)]
-pub(super) struct SlashCommandSelector<T: PopoverTrigger> {
+pub(super) struct SlashCommandSelector<T, TT>
+where
+    T: PopoverTrigger + ButtonCommon,
+    TT: Fn(&mut Window, &mut App) -> AnyView + 'static,
+{
     working_set: Arc<SlashCommandWorkingSet>,
     active_context_editor: WeakEntity<ContextEditor>,
     trigger: T,
+    tooltip: TT,
 }
 
 #[derive(Clone)]
@@ -48,16 +53,22 @@ pub(crate) struct SlashCommandDelegate {
     selected_index: usize,
 }
 
-impl<T: PopoverTrigger> SlashCommandSelector<T> {
+impl<T, TT> SlashCommandSelector<T, TT>
+where
+    T: PopoverTrigger + ButtonCommon,
+    TT: Fn(&mut Window, &mut App) -> AnyView + 'static,
+{
     pub(crate) fn new(
         working_set: Arc<SlashCommandWorkingSet>,
         active_context_editor: WeakEntity<ContextEditor>,
         trigger: T,
+        tooltip: TT,
     ) -> Self {
         SlashCommandSelector {
             working_set,
             active_context_editor,
             trigger,
+            tooltip,
         }
     }
 }
@@ -91,8 +102,7 @@ impl PickerDelegate for SlashCommandDelegate {
         let all_commands = self.all_commands.clone();
         cx.spawn_in(window, |this, mut cx| async move {
             let filtered_commands = cx
-                .background_executor()
-                .spawn(async move {
+                .background_spawn(async move {
                     if query.is_empty() {
                         all_commands
                     } else {
@@ -197,24 +207,31 @@ impl PickerDelegate for SlashCommandDelegate {
                             .child(
                                 h_flex()
                                     .gap_1p5()
-                                    .child(Icon::new(info.icon).size(IconSize::XSmall))
-                                    .child(div().font_buffer(cx).child({
+                                    .child(
+                                        Icon::new(info.icon)
+                                            .size(IconSize::XSmall)
+                                            .color(Color::Muted),
+                                    )
+                                    .child({
                                         let mut label = format!("{}", info.name);
                                         if let Some(args) = info.args.as_ref().filter(|_| selected)
                                         {
                                             label.push_str(&args);
                                         }
-                                        Label::new(label).single_line().size(LabelSize::Small)
-                                    }))
+                                        Label::new(label)
+                                            .single_line()
+                                            .size(LabelSize::Small)
+                                            .buffer_font(cx)
+                                    })
                                     .children(info.args.clone().filter(|_| !selected).map(
                                         |args| {
                                             div()
-                                                .font_buffer(cx)
                                                 .child(
                                                     Label::new(args)
                                                         .single_line()
                                                         .size(LabelSize::Small)
-                                                        .color(Color::Muted),
+                                                        .color(Color::Muted)
+                                                        .buffer_font(cx),
                                                 )
                                                 .visible_on_hover(format!(
                                                     "command-entry-label-{ix}"
@@ -226,7 +243,7 @@ impl PickerDelegate for SlashCommandDelegate {
                                 Label::new(info.description.clone())
                                     .size(LabelSize::Small)
                                     .color(Color::Muted)
-                                    .text_ellipsis(),
+                                    .truncate(),
                             ),
                     ),
             ),
@@ -241,7 +258,11 @@ impl PickerDelegate for SlashCommandDelegate {
     }
 }
 
-impl<T: PopoverTrigger> RenderOnce for SlashCommandSelector<T> {
+impl<T, TT> RenderOnce for SlashCommandSelector<T, TT>
+where
+    T: PopoverTrigger + ButtonCommon,
+    TT: Fn(&mut Window, &mut App) -> AnyView + 'static,
+{
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let all_models = self
             .working_set
@@ -280,10 +301,9 @@ impl<T: PopoverTrigger> RenderOnce for SlashCommandSelector<T> {
                                         .gap_1p5()
                                         .child(Icon::new(IconName::Plus).size(IconSize::XSmall))
                                         .child(
-                                            div().font_buffer(cx).child(
-                                                Label::new("create-your-command")
-                                                    .size(LabelSize::Small),
-                                            ),
+                                            Label::new("create-your-command")
+                                                .size(LabelSize::Small)
+                                                .buffer_font(cx),
                                         ),
                                 )
                                 .child(
@@ -322,12 +342,12 @@ impl<T: PopoverTrigger> RenderOnce for SlashCommandSelector<T> {
             .ok();
         PopoverMenu::new("model-switcher")
             .menu(move |_window, _cx| Some(picker_view.clone()))
-            .trigger(self.trigger)
+            .trigger_with_tooltip(self.trigger, self.tooltip)
             .attach(gpui::Corner::TopLeft)
             .anchor(gpui::Corner::BottomLeft)
             .offset(gpui::Point {
                 x: px(0.0),
-                y: px(-16.0),
+                y: px(-2.0),
             })
             .when_some(handle, |this, handle| this.with_handle(handle))
     }

@@ -191,7 +191,7 @@ impl FeedbackModal {
             );
             editor.set_show_gutter(false, cx);
             editor.set_show_indent_guides(false, cx);
-            editor.set_show_inline_completions(Some(false), window, cx);
+            editor.set_show_edit_predictions(Some(false), window, cx);
             editor.set_vertical_scroll_margin(5, cx);
             editor.set_use_modal_editing(false);
             editor.set_soft_wrap();
@@ -470,7 +470,7 @@ impl Render for FeedbackModal {
                     .bg(cx.theme().colors().editor_background)
                     .p_2()
                     .border_1()
-                    .rounded_md()
+                    .rounded_sm()
                     .border_color(cx.theme().colors().border)
                     .child(self.feedback_editor.clone()),
             )
@@ -482,7 +482,7 @@ impl Render for FeedbackModal {
                             .bg(cx.theme().colors().editor_background)
                             .p_2()
                             .border_1()
-                            .rounded_md()
+                            .rounded_sm()
                             .border_color(if self.valid_email_address() {
                                 cx.theme().colors().border
                             } else {

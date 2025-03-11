@@ -29,7 +29,7 @@ impl AssetSource for Assets {
     }
 }
 
-const IMAGE: &str = "examples/image/app-icon.png";
+const IMAGE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/image/app-icon.png");
 
 #[derive(Copy, Clone, Hash)]
 struct LoadImageParameters {
@@ -69,7 +69,7 @@ struct ImageLoadingExample {}
 
 impl ImageLoadingExample {
     fn loading_element() -> impl IntoElement {
-        div().size_full().flex_none().p_0p5().rounded_sm().child(
+        div().size_full().flex_none().p_0p5().rounded_xs().child(
             div().size_full().with_animation(
                 "loading-bg",
                 Animation::new(Duration::from_secs(3))
@@ -89,7 +89,7 @@ impl ImageLoadingExample {
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_sm()
+                .rounded_xs()
                 .text_sm()
                 .text_color(fallback_color)
                 .border_1()

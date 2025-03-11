@@ -6,6 +6,7 @@ mod disclosure;
 mod divider;
 mod dropdown_menu;
 mod facepile;
+mod group;
 mod icon;
 mod image;
 mod indent_guides;
@@ -16,6 +17,7 @@ mod label;
 mod list;
 mod modal;
 mod navigable;
+mod notification;
 mod numeric_stepper;
 mod popover;
 mod popover_menu;
@@ -29,7 +31,6 @@ mod tab;
 mod tab_bar;
 mod table;
 mod toggle;
-mod tool_strip;
 mod tooltip;
 
 #[cfg(feature = "stories")]
@@ -43,6 +44,7 @@ pub use disclosure::*;
 pub use divider::*;
 pub use dropdown_menu::*;
 pub use facepile::*;
+pub use group::*;
 pub use icon::*;
 pub use image::*;
 pub use indent_guides::*;
@@ -53,6 +55,7 @@ pub use label::*;
 pub use list::*;
 pub use modal::*;
 pub use navigable::*;
+pub use notification::*;
 pub use numeric_stepper::*;
 pub use popover::*;
 pub use popover_menu::*;
@@ -66,7 +69,6 @@ pub use tab::*;
 pub use tab_bar::*;
 pub use table::*;
 pub use toggle::*;
-pub use tool_strip::*;
 pub use tooltip::*;
 
 #[cfg(feature = "stories")]

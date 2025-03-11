@@ -14,6 +14,8 @@ Extensions can add the following capabilities to Zed:
 
 Before starting to develop an extension for Zed, be sure to [install Rust via rustup](https://www.rust-lang.org/tools/install).
 
+> Rust must be installed via rustup. If you have Rust installed via homebrew or otherwise, installing dev extensions will not work.
+
 When developing an extension, you can use it in Zed without needing to publish it by installing it as a _dev extension_.
 
 From the extensions page, click the `Install Dev Extension` button and select the directory containing your extension.
@@ -108,6 +110,8 @@ git add extensions/foobar
 submodule = "extensions/my-extension"
 version = "0.0.1"
 ```
+
+> If your extension is in a subdirectory within the submodule you can use the `path` field to point to where the extension resides.
 
 3. Run `pnpm sort-extensions` to ensure `extensions.toml` and `.gitmodules` are sorted
 

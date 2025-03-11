@@ -787,6 +787,93 @@ async fn test_remote_resolve_path_in_buffer(
     server_cx: &mut TestAppContext,
 ) {
     let fs = FakeFs::new(server_cx.executor());
+    // Even though we are not testing anything from project1, it is necessary to test if project2 is picking up correct worktree
+    fs.insert_tree(
+        path!("/code"),
+        json!({
+            "project1": {
+                ".git": {},
+                "README.md": "# project 1",
+                "src": {
+                    "lib.rs": "fn one() -> usize { 1 }"
+                }
+            },
+            "project2": {
+                ".git": {},
+                "README.md": "# project 2",
+                "src": {
+                    "lib.rs": "fn two() -> usize { 2 }"
+                }
+            }
+        }),
+    )
+    .await;
+
+    let (project, _headless) = init_test(&fs, cx, server_cx).await;
+
+    let _ = project
+        .update(cx, |project, cx| {
+            project.find_or_create_worktree(path!("/code/project1"), true, cx)
+        })
+        .await
+        .unwrap();
+
+    let (worktree2, _) = project
+        .update(cx, |project, cx| {
+            project.find_or_create_worktree(path!("/code/project2"), true, cx)
+        })
+        .await
+        .unwrap();
+
+    let worktree2_id = cx.update(|cx| worktree2.read(cx).id());
+
+    let buffer2 = project
+        .update(cx, |project, cx| {
+            project.open_buffer((worktree2_id, Path::new("src/lib.rs")), cx)
+        })
+        .await
+        .unwrap();
+
+    let path = project
+        .update(cx, |project, cx| {
+            project.resolve_path_in_buffer(path!("/code/project2/README.md"), &buffer2, cx)
+        })
+        .await
+        .unwrap();
+    assert!(path.is_file());
+    assert_eq!(
+        path.abs_path().unwrap().to_string_lossy(),
+        path!("/code/project2/README.md")
+    );
+
+    let path = project
+        .update(cx, |project, cx| {
+            project.resolve_path_in_buffer("../README.md", &buffer2, cx)
+        })
+        .await
+        .unwrap();
+    assert!(path.is_file());
+    assert_eq!(
+        path.project_path().unwrap().clone(),
+        ProjectPath::from((worktree2_id, "README.md"))
+    );
+
+    let path = project
+        .update(cx, |project, cx| {
+            project.resolve_path_in_buffer("../src", &buffer2, cx)
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        path.project_path().unwrap().clone(),
+        ProjectPath::from((worktree2_id, "src"))
+    );
+    assert!(path.is_dir());
+}
+
+#[gpui::test]
+async fn test_remote_resolve_abs_path(cx: &mut TestAppContext, server_cx: &mut TestAppContext) {
+    let fs = FakeFs::new(server_cx.executor());
     fs.insert_tree(
         path!("/code"),
         json!({
@@ -802,28 +889,14 @@ async fn test_remote_resolve_path_in_buffer(
     .await;
 
     let (project, _headless) = init_test(&fs, cx, server_cx).await;
-    let (worktree, _) = project
-        .update(cx, |project, cx| {
-            project.find_or_create_worktree(path!("/code/project1"), true, cx)
-        })
-        .await
-        .unwrap();
-
-    let worktree_id = cx.update(|cx| worktree.read(cx).id());
-
-    let buffer = project
-        .update(cx, |project, cx| {
-            project.open_buffer((worktree_id, Path::new("src/lib.rs")), cx)
-        })
-        .await
-        .unwrap();
 
     let path = project
         .update(cx, |project, cx| {
-            project.resolve_path_in_buffer(path!("/code/project1/README.md"), &buffer, cx)
+            project.resolve_abs_path(path!("/code/project1/README.md"), cx)
         })
         .await
         .unwrap();
+
     assert!(path.is_file());
     assert_eq!(
         path.abs_path().unwrap().to_string_lossy(),
@@ -832,64 +905,7 @@ async fn test_remote_resolve_path_in_buffer(
 
     let path = project
         .update(cx, |project, cx| {
-            project.resolve_path_in_buffer("../README.md", &buffer, cx)
-        })
-        .await
-        .unwrap();
-    assert!(path.is_file());
-    assert_eq!(
-        path.project_path().unwrap().clone(),
-        ProjectPath::from((worktree_id, "README.md"))
-    );
-
-    let path = project
-        .update(cx, |project, cx| {
-            project.resolve_path_in_buffer("../src", &buffer, cx)
-        })
-        .await
-        .unwrap();
-    assert_eq!(
-        path.project_path().unwrap().clone(),
-        ProjectPath::from((worktree_id, "src"))
-    );
-    assert!(path.is_dir());
-}
-
-#[gpui::test]
-async fn test_remote_resolve_abs_path(cx: &mut TestAppContext, server_cx: &mut TestAppContext) {
-    let fs = FakeFs::new(server_cx.executor());
-    fs.insert_tree(
-        "/code",
-        json!({
-            "project1": {
-                ".git": {},
-                "README.md": "# project 1",
-                "src": {
-                    "lib.rs": "fn one() -> usize { 1 }"
-                }
-            },
-        }),
-    )
-    .await;
-
-    let (project, _headless) = init_test(&fs, cx, server_cx).await;
-
-    let path = project
-        .update(cx, |project, cx| {
-            project.resolve_abs_path("/code/project1/README.md", cx)
-        })
-        .await
-        .unwrap();
-
-    assert!(path.is_file());
-    assert_eq!(
-        path.abs_path().unwrap().to_string_lossy(),
-        "/code/project1/README.md"
-    );
-
-    let path = project
-        .update(cx, |project, cx| {
-            project.resolve_abs_path("/code/project1/src", cx)
+            project.resolve_abs_path(path!("/code/project1/src"), cx)
         })
         .await
         .unwrap();
@@ -897,12 +913,12 @@ async fn test_remote_resolve_abs_path(cx: &mut TestAppContext, server_cx: &mut T
     assert!(path.is_dir());
     assert_eq!(
         path.abs_path().unwrap().to_string_lossy(),
-        "/code/project1/src"
+        path!("/code/project1/src")
     );
 
     let path = project
         .update(cx, |project, cx| {
-            project.resolve_abs_path("/code/project1/DOESNOTEXIST", cx)
+            project.resolve_abs_path(path!("/code/project1/DOESNOTEXIST"), cx)
         })
         .await;
     assert!(path.is_none());
@@ -958,7 +974,7 @@ async fn test_adding_then_removing_then_adding_worktrees(
 ) {
     let fs = FakeFs::new(server_cx.executor());
     fs.insert_tree(
-        "/code",
+        path!("/code"),
         json!({
             "project1": {
                 ".git": {},
@@ -977,14 +993,14 @@ async fn test_adding_then_removing_then_adding_worktrees(
     let (project, _headless) = init_test(&fs, cx, server_cx).await;
     let (_worktree, _) = project
         .update(cx, |project, cx| {
-            project.find_or_create_worktree("/code/project1", true, cx)
+            project.find_or_create_worktree(path!("/code/project1"), true, cx)
         })
         .await
         .unwrap();
 
     let (worktree_2, _) = project
         .update(cx, |project, cx| {
-            project.find_or_create_worktree("/code/project2", true, cx)
+            project.find_or_create_worktree(path!("/code/project2"), true, cx)
         })
         .await
         .unwrap();
@@ -994,7 +1010,7 @@ async fn test_adding_then_removing_then_adding_worktrees(
 
     let (worktree_2, _) = project
         .update(cx, |project, cx| {
-            project.find_or_create_worktree("/code/project2", true, cx)
+            project.find_or_create_worktree(path!("/code/project2"), true, cx)
         })
         .await
         .unwrap();
@@ -1246,8 +1262,7 @@ async fn test_remote_git_diffs(cx: &mut TestAppContext, server_cx: &mut TestAppC
     diff.read_with(cx, |diff, cx| {
         assert_eq!(diff.base_text_string().unwrap(), text_1);
         assert_eq!(
-            diff.unstaged_diff
-                .as_ref()
+            diff.secondary_diff()
                 .unwrap()
                 .read(cx)
                 .base_text_string()
@@ -1266,8 +1281,7 @@ async fn test_remote_git_diffs(cx: &mut TestAppContext, server_cx: &mut TestAppC
     diff.read_with(cx, |diff, cx| {
         assert_eq!(diff.base_text_string().unwrap(), text_1);
         assert_eq!(
-            diff.unstaged_diff
-                .as_ref()
+            diff.secondary_diff()
                 .unwrap()
                 .read(cx)
                 .base_text_string()
@@ -1286,8 +1300,7 @@ async fn test_remote_git_diffs(cx: &mut TestAppContext, server_cx: &mut TestAppC
     diff.read_with(cx, |diff, cx| {
         assert_eq!(diff.base_text_string().unwrap(), text_2);
         assert_eq!(
-            diff.unstaged_diff
-                .as_ref()
+            diff.secondary_diff()
                 .unwrap()
                 .read(cx)
                 .base_text_string()
@@ -1331,9 +1344,12 @@ async fn test_remote_git_branches(cx: &mut TestAppContext, server_cx: &mut TestA
     // Give the worktree a bit of time to index the file system
     cx.run_until_parked();
 
-    let remote_branches = project
-        .update(cx, |project, cx| project.branches(root_path.clone(), cx))
+    let repository = project.update(cx, |project, cx| project.active_repository(cx).unwrap());
+
+    let remote_branches = repository
+        .update(cx, |repository, _| repository.branches())
         .await
+        .unwrap()
         .unwrap();
 
     let new_branch = branches[2];
@@ -1345,13 +1361,10 @@ async fn test_remote_git_branches(cx: &mut TestAppContext, server_cx: &mut TestA
 
     assert_eq!(&remote_branches, &branches_set);
 
-    cx.update(|cx| {
-        project.update(cx, |project, cx| {
-            project.update_or_create_branch(root_path.clone(), new_branch.to_string(), cx)
-        })
-    })
-    .await
-    .unwrap();
+    cx.update(|cx| repository.read(cx).change_branch(new_branch))
+        .await
+        .unwrap()
+        .unwrap();
 
     cx.run_until_parked();
 
@@ -1367,16 +1380,18 @@ async fn test_remote_git_branches(cx: &mut TestAppContext, server_cx: &mut TestA
         })
     });
 
-    assert_eq!(server_branch.as_ref(), branches[2]);
+    assert_eq!(server_branch.name, branches[2]);
 
     // Also try creating a new branch
-    cx.update(|cx| {
-        project.update(cx, |project, cx| {
-            project.update_or_create_branch(root_path.clone(), "totally-new-branch".to_string(), cx)
-        })
-    })
-    .await
-    .unwrap();
+    cx.update(|cx| repository.read(cx).create_branch("totally-new-branch"))
+        .await
+        .unwrap()
+        .unwrap();
+
+    cx.update(|cx| repository.read(cx).change_branch("totally-new-branch"))
+        .await
+        .unwrap()
+        .unwrap();
 
     cx.run_until_parked();
 
@@ -1390,7 +1405,7 @@ async fn test_remote_git_branches(cx: &mut TestAppContext, server_cx: &mut TestA
         })
     });
 
-    assert_eq!(server_branch.as_ref(), "totally-new-branch");
+    assert_eq!(server_branch.name, "totally-new-branch");
 }
 
 pub async fn init_test(

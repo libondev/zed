@@ -105,7 +105,7 @@ impl<T: AsRef<Path>> PathExt for T {
 /// leverages Rust's type system to ensure that all paths entering Zed are always "sanitized" by removing the `\\\\?\\` prefix.
 /// On non-Windows operating systems, this struct is effectively a no-op.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct SanitizedPath(Arc<Path>);
+pub struct SanitizedPath(pub Arc<Path>);
 
 impl SanitizedPath {
     pub fn starts_with(&self, prefix: &SanitizedPath) -> bool {
@@ -146,6 +146,12 @@ impl From<SanitizedPath> for Arc<Path> {
     }
 }
 
+impl From<SanitizedPath> for PathBuf {
+    fn from(sanitized_path: SanitizedPath) -> Self {
+        sanitized_path.0.as_ref().into()
+    }
+}
+
 impl<T: AsRef<Path>> From<T> for SanitizedPath {
     #[cfg(not(target_os = "windows"))]
     fn from(path: T) -> Self {
@@ -165,7 +171,7 @@ pub const FILE_ROW_COLUMN_DELIMITER: char = ':';
 
 const ROW_COL_CAPTURE_REGEX: &str = r"(?x)
     ([^\(]+)(?:
-        \((\d+),(\d+)\) # filename(row,column)
+        \((\d+)[,:](\d+)\) # filename(row,column), filename(row:column)
         |
         \((\d+)\)()     # filename(row)
     )
@@ -647,6 +653,14 @@ mod tests {
                 path: PathBuf::from("crate/utils/src/test:today.log"),
                 row: Some(34),
                 column: None,
+            }
+        );
+        assert_eq!(
+            PathWithPosition::parse_str("/testing/out/src/file_finder.odin(7:15)"),
+            PathWithPosition {
+                path: PathBuf::from("/testing/out/src/file_finder.odin"),
+                row: Some(7),
+                column: Some(15),
             }
         );
     }

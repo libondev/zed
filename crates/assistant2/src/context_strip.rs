@@ -25,7 +25,7 @@ use crate::{
 
 pub struct ContextStrip {
     context_store: Entity<ContextStore>,
-    pub context_picker: Entity<ContextPicker>,
+    context_picker: Entity<ContextPicker>,
     context_picker_menu_handle: PopoverMenuHandle<ContextPicker>,
     focus_handle: FocusHandle,
     suggest_context_kind: SuggestContextKind,
@@ -36,7 +36,6 @@ pub struct ContextStrip {
 }
 
 impl ContextStrip {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         context_store: Entity<ContextStore>,
         workspace: WeakEntity<Workspace>,
@@ -411,22 +410,22 @@ impl Render for ContextStrip {
 
                         Some(context_picker.clone())
                     })
-                    .trigger(
+                    .trigger_with_tooltip(
                         IconButton::new("add-context", IconName::Plus)
                             .icon_size(IconSize::Small)
-                            .style(ui::ButtonStyle::Filled)
-                            .tooltip({
-                                let focus_handle = focus_handle.clone();
-                                move |window, cx| {
-                                    Tooltip::for_action_in(
-                                        "Add Context",
-                                        &ToggleContextPicker,
-                                        &focus_handle,
-                                        window,
-                                        cx,
-                                    )
-                                }
-                            }),
+                            .style(ui::ButtonStyle::Filled),
+                        {
+                            let focus_handle = focus_handle.clone();
+                            move |window, cx| {
+                                Tooltip::for_action_in(
+                                    "Add Context",
+                                    &ToggleContextPicker,
+                                    &focus_handle,
+                                    window,
+                                    cx,
+                                )
+                            }
+                        },
                     )
                     .attach(gpui::Corner::TopLeft)
                     .anchor(gpui::Corner::BottomLeft)
@@ -453,6 +452,7 @@ impl Render for ContextStrip {
                                     &ToggleContextPicker,
                                     &focus_handle,
                                     window,
+                                    cx,
                                 )
                                 .map(|binding| binding.into_any_element()),
                             ),
