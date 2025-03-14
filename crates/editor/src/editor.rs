@@ -256,7 +256,7 @@ impl Navigated {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 enum DisplayDiffHunk {
     Folded {
         display_row: DisplayRow,
@@ -364,6 +364,11 @@ pub enum SelectMode {
 pub enum EditorMode {
     SingleLine { auto_width: bool },
     AutoHeight { max_lines: usize },
+    ResizableHeight {
+        initial_height: Pixels,
+        min_height: Pixels,
+        max_height: Pixels,
+    },
     Full,
 }
 
@@ -760,6 +765,10 @@ pub struct Editor {
     toggle_fold_multiple_buffers: Task<()>,
     _scroll_cursor_center_top_bottom_task: Task<()>,
     serialize_selections: Task<()>,
+    current_height: Option<Pixels>,
+    is_resizing: bool,
+    resize_start_height: Option<Pixels>,
+    resize_start_y: Option<f32>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
@@ -1467,6 +1476,10 @@ impl Editor {
             serialize_selections: Task::ready(()),
             text_style_refinement: None,
             load_diff_task: load_uncommitted_diff,
+            current_height: None,
+            is_resizing: false,
+            resize_start_height: None,
+            resize_start_y: None,
         };
         this.tasks_update_task = Some(this.refresh_runnables(window, cx));
         this._subscriptions.extend(project_subscriptions);
@@ -2435,7 +2448,9 @@ impl Editor {
         let display_map = self.display_map.update(cx, |map, cx| map.snapshot(cx));
         let buffer = &display_map.buffer_snapshot;
         let newest_selection = self.selections.newest_anchor().clone();
-        let position = display_map.clip_point(position, Bias::Left);
+        let position = display_map
+            .clip_point(position, Bias::Left)
+            .to_point(&display_map);
 
         let start;
         let end;
@@ -2443,7 +2458,7 @@ impl Editor {
         let mut auto_scroll;
         match click_count {
             1 => {
-                start = buffer.anchor_before(position.to_point(&display_map));
+                start = buffer.anchor_before(position);
                 end = start;
                 mode = SelectMode::Character;
                 auto_scroll = true;
@@ -2456,9 +2471,6 @@ impl Editor {
                 auto_scroll = true;
             }
             3 => {
-                let position = display_map
-                    .clip_point(position, Bias::Left)
-                    .to_point(&display_map);
                 let line_start = display_map.prev_line_boundary(position).0;
                 let next_line_start = buffer.clip_point(
                     display_map.next_line_boundary(position).0 + Point::new(1, 0),
@@ -3308,10 +3320,8 @@ impl Editor {
                             (None, false)
                         };
 
-                        let capacity_for_delimiter = comment_delimiter
-                            .as_deref()
-                            .map(str::len)
-                            .unwrap_or_default();
+                        let capacity_for_delimiter =
+                            comment_delimiter.as_deref().map(str::len).unwrap_or_default();
                         let mut new_text =
                             String::with_capacity(1 + capacity_for_delimiter + indent.len as usize);
                         new_text.push('\n');
@@ -3946,7 +3956,7 @@ impl Editor {
         }
 
         // OnTypeFormatting returns a list of edits, no need to pass them between Zed instances,
-        // hence we do LSP request & edit on host side only — add formats to host's history.
+        // hence we do LSP request & edit on host side only — add formats to host's history.
         let push_to_lsp_host_history = true;
         // If this is not the host, append its history with new edits.
         let push_to_client_history = project.read(cx).is_via_collab();
@@ -7670,7 +7680,8 @@ impl Editor {
             .selections
             .all::<usize>(cx)
             .into_iter()
-            .map(|s| s.range());
+            .map(|s| s.range())
+            .collect();
 
         self.transact(window, cx, |this, window, cx| {
             this.buffer.update(cx, |buffer, cx| {
@@ -15991,8 +16002,8 @@ impl Editor {
             .into_iter()
             .map(|mut selection| {
                 selection.start.0 =
-                    (selection.start.0 as isize).saturating_add(start_delta) as usize;
-                selection.end.0 = (selection.end.0 as isize).saturating_add(end_delta) as usize;
+                    (selection.start.0 as isize).saturating_add_signed(start_delta) as usize;
+                selection.end.0 = (selection.end.0 as isize).saturating_add_signed(end_delta) as usize;
                 snapshot.clip_offset_utf16(selection.start, Bias::Left)
                     ..snapshot.clip_offset_utf16(selection.end, Bias::Right)
             })
