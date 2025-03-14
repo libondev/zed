@@ -369,6 +369,9 @@ pub(crate) fn commit_message_editor(
     commit_editor.set_hard_wrap(Some(72), cx);
     let placeholder = placeholder.unwrap_or("Enter commit message");
     commit_editor.set_placeholder_text(placeholder, cx);
+    let text_style = cx.theme().text().with_size(cx.theme().font_size());
+    commit_editor.set_text_style(text_style, cx);
+
     commit_editor
 }
 
