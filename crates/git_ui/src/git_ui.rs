@@ -30,6 +30,13 @@ use zed_actions;
 
 use crate::{git_panel::GitPanel, text_diff_view::TextDiffView};
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum RemoteOperation {
+    Fetch,
+    Pull,
+    Push,
+}
+
 mod askpass_modal;
 pub mod branch_picker;
 mod commit_modal;

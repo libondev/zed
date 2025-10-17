@@ -4,10 +4,13 @@ use crate::commit_tooltip::CommitTooltip;
 use crate::commit_view::CommitView;
 use crate::project_diff::{self, Diff, ProjectDiff};
 use crate::remote_output::{self, RemoteAction, SuccessMessage};
-use crate::{branch_picker, picker_prompt, render_remote_button};
+
+use crate::{branch_picker, picker_prompt, render_remote_button, RemoteOperation};
+
 use crate::{
     git_panel_settings::GitPanelSettings, git_status_icon, repository_selector::RepositorySelector,
 };
+
 use agent_settings::AgentSettings;
 use anyhow::Context as _;
 use askpass::AskPassDelegate;
@@ -324,6 +327,7 @@ pub struct GitPanel {
     local_committer_task: Option<Task<()>>,
     bulk_staging: Option<BulkStaging>,
     stash_entries: GitStash,
+    remote_operation: Option<RemoteOperation>,
     _settings_subscription: Subscription,
 }
 
@@ -485,6 +489,7 @@ impl GitPanel {
                 entry_count: 0,
                 bulk_staging: None,
                 stash_entries: Default::default(),
+                remote_operation: None,
                 _settings_subscription,
             };
 
@@ -1988,13 +1993,20 @@ impl GitPanel {
             return;
         }
 
+        // Check if a remote operation is already running
+        if self.remote_operation.is_some() {
+            return;
+        }
+
         let Some(repo) = self.active_repository.clone() else {
             return;
         };
         telemetry::event!("Git Fetched");
         let askpass = self.askpass_delegate("git fetch", window, cx);
         let this = cx.weak_entity();
-
+        // Set the remote operation to Fetch
+        self.remote_operation = Some(RemoteOperation::Fetch);
+        cx.notify();
         let fetch_options = if is_fetch_all {
             Task::ready(Some(FetchOptions::All))
         } else {
@@ -2016,16 +2028,22 @@ impl GitPanel {
                         FetchOptions::All => RemoteAction::Fetch(None),
                         FetchOptions::Remote(remote) => RemoteAction::Fetch(Some(remote)),
                     };
-                    match remote_message {
-                        Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
-                        Err(e) => {
-                            log::error!("Error while fetching {:?}", e);
-                            this.show_error_toast(action.name(), e, cx)
-                        }
-                    }
 
-                    anyhow::Ok(())
-                })
+
+                let action = RemoteAction::Pull(remote);
+                match remote_message {
+                    Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
+                    Err(e) => {
+                        log::error!("Error while pulling {:?}", e);
+                        this.show_error_toast(action.name(), e, cx)
+                    }
+                }
+
+                // Clear the remote operation state
+                this.remote_operation = None;
+                cx.notify();
+                anyhow::Ok(())
+            })
                 .ok();
                 anyhow::Ok(())
             })
@@ -2204,19 +2222,49 @@ impl GitPanel {
         .detach();
     }
 
+
     pub(crate) fn pull(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+
         if !self.can_push_and_pull(cx) {
+
+            return;
+
+        }
+
+
+        // Check if a remote operation is already running
+        if self.remote_operation.is_some() {
             return;
         }
+
         let Some(repo) = self.active_repository.clone() else {
+
             return;
+
         };
+
         let Some(branch) = repo.read(cx).branch.as_ref() else {
+
             return;
+
         };
+
         telemetry::event!("Git Pulled");
+
         let branch = branch.clone();
+
+
+
+        // Set the remote operation to Pull
+
+
+        self.remote_operation = Some(RemoteOperation::Pull);
+
+
+        cx.notify();
+
         let remote = self.get_remote(false, window, cx);
+
         cx.spawn_in(window, async move |this, cx| {
             let remote = match remote.await {
                 Ok(Some(remote)) => remote,
@@ -2244,15 +2292,33 @@ impl GitPanel {
                 )
             })?;
 
+
             let remote_message = pull.await?;
 
-            let action = RemoteAction::Pull(remote);
-            this.update(cx, |this, cx| match remote_message {
-                Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
-                Err(e) => {
-                    log::error!("Error while pulling {:?}", e);
-                    this.show_error_toast(action.name(), e, cx)
+
+            this.update(cx, |this, cx| {
+
+                let action = RemoteAction::Pull(remote);
+                match remote_message {
+
+
+
+                    Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
+
+
+
+                    Err(e) => {
+                        log::error!("Error while pulling {:?}", e);
+
+                        this.show_error_toast(action.name(), e, cx)
+                    }
                 }
+
+                // Clear the remote operation state
+                this.remote_operation = None;
+                cx.notify();
+
+                anyhow::Ok(())
             })
             .ok();
 
@@ -2267,18 +2333,36 @@ impl GitPanel {
         select_remote: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
-        if !self.can_push_and_pull(cx) {
-            return;
-        }
-        let Some(repo) = self.active_repository.clone() else {
-            return;
-        };
-        let Some(branch) = repo.read(cx).branch.as_ref() else {
-            return;
-        };
-        telemetry::event!("Git Pushed");
-        let branch = branch.clone();
+
+        ) {
+
+            if !self.can_push_and_pull(cx) {
+                return;
+            }
+
+
+            // Check if a remote operation is already running
+            if self.remote_operation.is_some() {
+                return;
+            }
+
+            let Some(repo) = self.active_repository.clone() else {
+                return;
+            };
+
+            let Some(branch) = repo.read(cx).branch.as_ref() else {
+                return;
+            };
+
+            telemetry::event!("Git Pushed");
+
+            let branch = branch.clone();
+
+            // Set the remote operation to Push
+            self.remote_operation = Some(RemoteOperation::Push);
+
+            cx.notify();
+
 
         let options = if force_push {
             Some(PushOptions::Force)
@@ -2324,13 +2408,21 @@ impl GitPanel {
 
             let remote_output = push.await?;
 
-            let action = RemoteAction::Push(branch.name().to_owned().into(), remote);
-            this.update(cx, |this, cx| match remote_output {
-                Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
-                Err(e) => {
-                    log::error!("Error while pushing {:?}", e);
-                    this.show_error_toast(action.name(), e, cx)
+
+            this.update(cx, |this, cx| {
+                let action = RemoteAction::Push(branch.name().to_owned().into(), remote);
+                match remote_output {
+                    Ok(remote_message) => this.show_remote_output(action, remote_message, cx),
+                    Err(e) => {
+                        log::error!("Error while pushing {:?}", e);
+                        this.show_error_toast(action.name(), e, cx)
+                    }
                 }
+                // Clear the remote operation state
+                this.remote_operation = None;
+                cx.notify();
+
+                anyhow::Ok(())
             })?;
 
             anyhow::Ok(())
@@ -3332,29 +3424,62 @@ impl GitPanel {
                         ),
                 ),
         )
-    }
-
-    pub(crate) fn render_remote_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let branch = self.active_repository.as_ref()?.read(cx).branch.clone();
-        if !self.can_push_and_pull(cx) {
-            return None;
         }
-        Some(
-            h_flex()
-                .gap_1()
-                .flex_shrink_0()
-                .when_some(branch, |this, branch| {
-                    let focus_handle = Some(self.focus_handle(cx));
 
-                    this.children(render_remote_button(
-                        "remote-button",
-                        &branch,
-                        focus_handle,
-                        true,
-                    ))
-                })
-                .into_any_element(),
-        )
+        pub(crate) fn render_remote_button(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+            let branch = self.active_repository.as_ref()?.read(cx).branch.clone();
+
+            if !self.can_push_and_pull(cx) {
+                return None;
+            }
+
+
+            let Some(branch) = branch else { return None; };
+
+            let focus_handle = Some(self.focus_handle(cx));
+            let upstream = branch.upstream.as_ref();
+            let id: SharedString = "remote-button".into();
+
+            let button = match upstream {
+                Some(Upstream {
+                    tracking: UpstreamTracking::Tracked(UpstreamTrackingStatus { ahead, behind }),
+                    ..
+                }) => match (*ahead, *behind) {
+                    (0, 0) => {
+                        // Show fetch button when up to date
+                        let is_disabled = self.is_remote_operation_disabled(RemoteOperation::Fetch);
+                        Some(remote_button::render_fetch_button_with_disabled(focus_handle, id, is_disabled))
+                    }
+                    (ahead, 0) => {
+                        // Show push button when ahead
+                        let is_disabled = self.is_remote_operation_disabled(RemoteOperation::Push);
+                        Some(remote_button::render_push_button_with_disabled(focus_handle, id, ahead, is_disabled))
+                    }
+                    (ahead, behind) => {
+                        // Show pull button when behind
+                        let is_disabled = self.is_remote_operation_disabled(RemoteOperation::Pull);
+                        Some(remote_button::render_pull_button_with_disabled(focus_handle, id, ahead, behind, is_disabled))
+                    }
+                },
+                Some(Upstream {
+                    tracking: UpstreamTracking::Gone,
+                    ..
+                }) => {
+                    // Show republish button when upstream is gone
+                    let is_disabled = self.is_remote_operation_disabled(RemoteOperation::Push);
+                    Some(remote_button::render_republish_button_with_disabled(focus_handle, id, is_disabled))
+                }
+                None => {
+                    // Show publish button when no upstream
+                    let is_disabled = self.is_remote_operation_disabled(RemoteOperation::Push);
+                    Some(remote_button::render_publish_button_with_disabled(focus_handle, id, is_disabled))
+                }
+            };
+
+            button.map(|btn| h_flex().gap_1().flex_shrink_0().child(btn).into_any_element())
+
+        }
+
     }
 
     pub fn render_footer(
@@ -4162,6 +4287,10 @@ impl GitPanel {
 
     pub fn amend_pending(&self) -> bool {
         self.amend_pending
+    }
+
+    fn is_remote_operation_disabled(&self, operation: RemoteOperation) -> bool {
+        self.remote_operation.as_ref().map(|op| op == &operation).unwrap_or(false)
     }
 
     pub fn set_amend_pending(&mut self, value: bool, cx: &mut Context<Self>) {
