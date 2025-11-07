@@ -2391,20 +2391,20 @@ async fn test_history_items_vs_very_good_external_match(cx: &mut gpui::TestAppCo
     let query = "collab_ui";
     cx.simulate_input(query);
     finder.update(cx, |picker, _| {
-            let search_entries = collect_search_matches(picker).search_paths_only();
-            // With the new sorting logic, history items are sorted by recent access first,
-            // then non-history items. second.rs was accessed most recently.
-            assert_eq!(
-                search_entries,
-                vec![
-                    rel_path("collab_ui/second.rs").into(),
-                    rel_path("collab_ui/third.rs").into(),
-                    rel_path("collab_ui/first.rs").into(),
-                    rel_path("collab_ui/collab_ui.rs").into(),
-                ],
-                "History items are prioritized by recent access, followed by search results"
-            );
-        });
+        let search_entries = collect_search_matches(picker).search_paths_only();
+        // With the new sorting logic, history items are sorted by recent access first,
+        // then non-history items. second.rs was accessed most recently.
+        assert_eq!(
+            search_entries,
+            vec![
+                rel_path("collab_ui/second.rs").into(),
+                rel_path("collab_ui/third.rs").into(),
+                rel_path("collab_ui/first.rs").into(),
+                rel_path("collab_ui/collab_ui.rs").into(),
+            ],
+            "History items are prioritized by recent access, followed by search results"
+        );
+    });
 }
 
 #[gpui::test]
