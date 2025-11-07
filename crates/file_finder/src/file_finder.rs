@@ -409,6 +409,7 @@ pub struct FileFinderDelegate {
     has_changed_selected_index: bool,
     cancel_flag: Arc<AtomicBool>,
     history_items: Vec<FoundPath>,
+    history_recent_ranks: HashMap<ProjectPath, usize>,
     separate_history: bool,
     first_update: bool,
     filter_popover_menu_handle: PopoverMenuHandle<ContextMenu>,
@@ -468,14 +469,6 @@ enum Match {
 }
 
 impl Match {
-    fn relative_path(&self) -> Option<&Arc<RelPath>> {
-        match self {
-            Match::History { path, .. } => Some(&path.project.path),
-            Match::Search(panel_match) => Some(&panel_match.0.path),
-            Match::CreateNew(_) => None,
-        }
-    }
-
     fn abs_path(&self, project: &Entity<Project>, cx: &App) -> Option<PathBuf> {
         match self {
             Match::History { path, .. } => Some(path.absolute.clone()),
@@ -497,6 +490,17 @@ impl Match {
             Match::CreateNew(_) => None,
         }
     }
+
+    fn project_path(&self) -> Option<ProjectPath> {
+        match self {
+            Match::History { path, .. } => Some(path.project.clone()),
+            Match::Search(ProjectPanelOrdMatch(path_match)) => Some(ProjectPath {
+                worktree_id: WorktreeId::from_usize(path_match.worktree_id),
+                path: path_match.path.clone(),
+            }),
+            Match::CreateNew(path) => Some(path.clone()),
+        }
+    }
 }
 
 impl Matches {
@@ -512,6 +516,7 @@ impl Matches {
         &self,
         entry: &Match,
         currently_opened: Option<&FoundPath>,
+        history_recent_ranks: &HashMap<ProjectPath, usize>,
     ) -> Result<usize, usize> {
         if let Match::History {
             path,
@@ -524,16 +529,26 @@ impl Matches {
             // reason for the matches set to change.
             self.matches
                 .iter()
-                .position(|m| match m.relative_path() {
-                    Some(p) => path.project.path == *p,
-                    None => false,
+                .position(|m| match m {
+                    Match::History {
+                        path: existing,
+                        panel_match: None,
+                    } => existing.project == path.project,
+                    _ => false,
                 })
                 .ok_or(0)
         } else {
             self.matches.binary_search_by(|m| {
                 // `reverse()` since if cmp_matches(a, b) == Ordering::Greater, then a is better than b.
                 // And we want the better entries go first.
-                Self::cmp_matches(self.separate_history, currently_opened, m, entry).reverse()
+                Self::cmp_matches(
+                    self.separate_history,
+                    currently_opened,
+                    history_recent_ranks,
+                    m,
+                    entry,
+                )
+                .reverse()
             })
         }
     }
@@ -548,6 +563,7 @@ impl Matches {
         new_search_matches: impl Iterator<Item = ProjectPanelOrdMatch>,
         extend_old_matches: bool,
         path_style: PathStyle,
+        history_recent_ranks: &HashMap<ProjectPath, usize>,
     ) {
         let Some(query) = query else {
             // assuming that if there's no query, then there's no search matches.
@@ -610,7 +626,7 @@ impl Matches {
             .into_values()
             .chain(new_search_matches.into_iter())
         {
-            match self.position(&new_match, currently_opened) {
+            match self.position(&new_match, currently_opened, history_recent_ranks) {
                 Ok(_duplicate) => continue,
                 Err(i) => {
                     self.matches.insert(i, new_match);
@@ -626,6 +642,7 @@ impl Matches {
     fn cmp_matches(
         separate_history: bool,
         currently_opened: Option<&FoundPath>,
+        history_recent_ranks: &HashMap<ProjectPath, usize>,
         a: &Match,
         b: &Match,
     ) -> cmp::Ordering {
@@ -635,7 +652,26 @@ impl Matches {
             (_, Match::CreateNew(_)) => return cmp::Ordering::Greater,
             _ => {}
         }
-        debug_assert!(a.panel_match().is_some() && b.panel_match().is_some());
+
+        // Compare based on history recent ranks
+        if let (Some(a_path), Some(b_path)) = (a.project_path(), b.project_path()) {
+            let a_rank = history_recent_ranks.get(&a_path);
+            let b_rank = history_recent_ranks.get(&b_path);
+            match (a_rank, b_rank) {
+                (Some(ra), Some(rb)) if ra != rb => {
+                    // Lower rank means more recent, so should come first
+                    return rb.cmp(ra);
+                }
+                (Some(_), None) => {
+                    // Items with history rank should come before those without
+                    return cmp::Ordering::Greater;
+                }
+                (None, Some(_)) => {
+                    return cmp::Ordering::Less;
+                }
+                _ => {}
+            }
+        }
 
         match (&a, &b) {
             // bubble currently opened files to the top
@@ -840,6 +876,13 @@ impl FileFinderDelegate {
         cx: &mut Context<FileFinder>,
     ) -> Self {
         Self::subscribe_to_updates(&project, window, cx);
+
+        let history_recent_ranks = history_items
+            .iter()
+            .enumerate()
+            .map(|(rank, item)| (item.project.clone(), rank))
+            .collect();
+
         Self {
             file_finder,
             workspace,
@@ -854,6 +897,7 @@ impl FileFinderDelegate {
             selected_index: 0,
             cancel_flag: Arc::new(AtomicBool::new(false)),
             history_items,
+            history_recent_ranks,
             separate_history,
             first_update: true,
             filter_popover_menu_handle: PopoverMenuHandle::default(),
@@ -976,6 +1020,7 @@ impl FileFinderDelegate {
                 matches.into_iter(),
                 extend_old_matches,
                 path_style,
+                &self.history_recent_ranks,
             );
 
             let query_path = query.raw_query.as_str();
@@ -1022,7 +1067,11 @@ impl FileFinderDelegate {
                 || self.calculate_selected_index(cx),
                 |m| {
                     self.matches
-                        .position(&m, self.currently_opened_path.as_ref())
+                        .position(
+                            &m,
+                            self.currently_opened_path.as_ref(),
+                            &self.history_recent_ranks,
+                        )
                         .unwrap_or(0)
                 },
             );
@@ -1414,6 +1463,7 @@ impl PickerDelegate for FileFinderDelegate {
                     None.into_iter(),
                     false,
                     path_style,
+                    &self.history_recent_ranks,
                 );
 
                 self.first_update = false;
