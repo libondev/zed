@@ -199,6 +199,8 @@ actions!(
         AddFolderToProject,
         /// Clears all notifications.
         ClearAllNotifications,
+        /// Clears the recent files history.
+        ClearRecentFilesHistory,
         /// Closes the active dock.
         CloseActiveDock,
         /// Closes all docks.
@@ -1925,6 +1927,52 @@ impl Workspace {
         self.recent_navigation_history_iter(cx)
             .take(limit.unwrap_or(usize::MAX))
             .collect()
+    }
+
+    pub fn clear_recent_files_history(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Workspace>,
+    ) -> Task<()> {
+        let panes = self.panes.clone();
+
+        cx.spawn_in(window, async move |workspace, cx| {
+            let answer = workspace
+                .update_in(cx, |_, window, cx| {
+                    window.prompt(
+                        PromptLevel::Warning,
+                        "Clear Recent Files History",
+                        Some("This action will clear all navigation history (forward/backward/closed tabs). \n\nThis action is irreversible, do you want to continue?"),
+                        &["Clear", "Cancel"],
+                        cx,
+                    )
+                })
+                .ok();
+
+            let Some(answer) = answer else {
+                return;
+            };
+
+            let result = answer.await;
+
+            if result != Ok(0) {
+                return;
+            }
+
+            let _ = workspace.update(cx, |_, cx| {
+                let mut cleared_count = 0;
+
+                for pane in &panes {
+                    let cleared = pane.update(cx, |pane, cx| {
+                        pane.nav_history_mut().clear(cx)
+                    });
+
+                    if cleared {
+                        cleared_count += 1;
+                    }
+                }
+            });
+        })
     }
 
     fn navigate_history(
@@ -5866,6 +5914,11 @@ impl Workspace {
             .on_action(cx.listener(
                 |workspace: &mut Workspace, _: &ClearAllNotifications, _, cx| {
                     workspace.clear_all_notifications(cx);
+                },
+            ))
+            .on_action(cx.listener(
+                |workspace: &mut Workspace, _: &ClearRecentFilesHistory, window, cx| {
+                    workspace.clear_recent_files_history(window, cx).detach();
                 },
             ))
             .on_action(cx.listener(
