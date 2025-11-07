@@ -1927,11 +1927,12 @@ async fn test_search_sorts_history_items(cx: &mut gpui::TestAppContext) {
         .await;
     finder.update(cx, |finder, _| {
         let search_matches = collect_search_matches(finder);
+        // History items are now sorted by recent access (6_qwqwqw was accessed most recently)
         assert_eq!(
             search_matches.history,
             vec![
-                rel_path("test/1_qw").into(),
-                rel_path("test/6_qwqwqw").into()
+                rel_path("test/6_qwqwqw").into(),
+                rel_path("test/1_qw").into()
             ],
         );
         assert_eq!(
@@ -2022,8 +2023,9 @@ async fn test_keep_opened_file_on_top_of_search_results_and_select_next_one(
     picker.update(cx, |finder, _| {
         assert_eq!(finder.delegate.matches.len(), 6);
         assert_match_at_position(finder, 0, "main.rs");
-        assert_match_selection(finder, 1, "bar.rs");
-        assert_match_at_position(finder, 2, "lib.rs");
+        // History items are sorted by recent access (lib.rs was accessed more recently than bar.rs)
+        assert_match_selection(finder, 1, "lib.rs");
+        assert_match_at_position(finder, 2, "bar.rs");
         assert_match_at_position(finder, 3, "moo.rs");
         assert_match_at_position(finder, 4, "maaa.rs");
         assert_match_at_position(finder, 5, ".rs");
@@ -2037,8 +2039,9 @@ async fn test_keep_opened_file_on_top_of_search_results_and_select_next_one(
         .await;
     picker.update(cx, |finder, _| {
         assert_eq!(finder.delegate.matches.len(), 3);
-        assert_match_at_position(finder, 0, "bar.rs");
-        assert_match_at_position(finder, 1, "lib.rs");
+        // lib.rs appears first because it was accessed more recently than bar.rs
+        assert_match_at_position(finder, 0, "lib.rs");
+        assert_match_at_position(finder, 1, "bar.rs");
         assert_match_at_position(finder, 2, "b");
     });
 
@@ -2130,8 +2133,9 @@ async fn test_setting_auto_select_first_and_select_active_file(cx: &mut TestAppC
     picker.update(cx, |finder, _| {
         assert_eq!(finder.delegate.matches.len(), 6);
         assert_match_selection(finder, 0, "main.rs");
-        assert_match_at_position(finder, 1, "bar.rs");
-        assert_match_at_position(finder, 2, "lib.rs");
+        // History items are sorted by recent access (lib.rs was accessed more recently than bar.rs)
+        assert_match_at_position(finder, 1, "lib.rs");
+        assert_match_at_position(finder, 2, "bar.rs");
         assert_match_at_position(finder, 3, "moo.rs");
         assert_match_at_position(finder, 4, "maaa.rs");
         assert_match_at_position(finder, 5, ".rs");
@@ -2187,9 +2191,10 @@ async fn test_non_separate_history_items(cx: &mut TestAppContext) {
     picker.update(cx, |finder, _| {
         assert_eq!(finder.delegate.matches.len(), 6);
         assert_match_at_position(finder, 0, "main.rs");
-        assert_match_selection(finder, 1, "moo.rs");
+        // History items are sorted by recent access, appearing before search results
+        assert_match_selection(finder, 1, "lib.rs");
         assert_match_at_position(finder, 2, "bar.rs");
-        assert_match_at_position(finder, 3, "lib.rs");
+        assert_match_at_position(finder, 3, "moo.rs");
         assert_match_at_position(finder, 4, "maaa.rs");
         assert_match_at_position(finder, 5, ".rs");
     });
@@ -2202,8 +2207,9 @@ async fn test_non_separate_history_items(cx: &mut TestAppContext) {
         .await;
     picker.update(cx, |finder, _| {
         assert_eq!(finder.delegate.matches.len(), 3);
-        assert_match_at_position(finder, 0, "bar.rs");
-        assert_match_at_position(finder, 1, "lib.rs");
+        // lib.rs appears first because it was accessed more recently than bar.rs
+        assert_match_at_position(finder, 0, "lib.rs");
+        assert_match_at_position(finder, 1, "bar.rs");
         assert_match_at_position(finder, 2, "b");
     });
 
@@ -2386,15 +2392,17 @@ async fn test_history_items_vs_very_good_external_match(cx: &mut gpui::TestAppCo
     cx.simulate_input(query);
     finder.update(cx, |picker, _| {
             let search_entries = collect_search_matches(picker).search_paths_only();
+            // With the new sorting logic, history items are sorted by recent access first,
+            // then non-history items. second.rs was accessed most recently.
             assert_eq!(
                 search_entries,
                 vec![
-                    rel_path("collab_ui/collab_ui.rs").into(),
-                    rel_path("collab_ui/first.rs").into(),
-                    rel_path("collab_ui/third.rs").into(),
                     rel_path("collab_ui/second.rs").into(),
+                    rel_path("collab_ui/third.rs").into(),
+                    rel_path("collab_ui/first.rs").into(),
+                    rel_path("collab_ui/collab_ui.rs").into(),
                 ],
-                "Despite all search results having the same directory name, the most matching one should be on top"
+                "History items are prioritized by recent access, followed by search results"
             );
         });
 }
